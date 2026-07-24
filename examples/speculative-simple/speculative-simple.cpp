@@ -49,6 +49,7 @@ int main(int argc, char ** argv) {
     llama_model_ptr model_dft;
     llama_context_ptr ctx_dft;
 
+    //TODO: START PARALLEL HERE!
     // TODO: simplify this logic
     {
         const auto & params_spec = params.speculative.draft;
