@@ -13,6 +13,15 @@
 #include <vector>
 #include <utility>
 
+
+// Currently the model runs with the simple draft and checker models
+// The goal is for this loop to run, | will seperate threads
+// Generate n tokens |  (first run)
+// Generate n more tokens | check the last n tokens (for the other runs)
+// If the checker rejects a token, first we should just get it functional. It should regenerate all of it, until it is correct.
+// However, regardless of whether it passes or not, it should be drafting new tokens, unless it recieves a fail, in which case it should get reset
+// If the checker accepts n tokens, it will wait until the draft creates more tokens and continues as usual
+
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
 
