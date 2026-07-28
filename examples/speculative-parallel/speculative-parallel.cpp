@@ -18,14 +18,14 @@
 // It alternates serially, like so
 // Generate n tokens
 // Check the last n tokens
-
-// cmake --build build -j$(nproc)
-// ./build/bin/llama-speculative-simple \
-//   -m ~/dev/arm-spec/models/qwen2.5-3b-instruct-q4_0.gguf \
-//   -md ~/dev/arm-spec/models/qwen2.5-0.5b-instruct-q4_0.gguf \
-//   --spec-type draft-simple \
-//   --spec-draft-n-max 3 --temp 0 -n 64 \
-//   -p "Write a haiku about compilers."
+// The goal is to rewrite this code, such that it runs on seperate threads naively for this loop to run, | will seperate threads
+// Generate n tokens |  (first run)
+// Generate n more tokens | check the last n tokens (for the other runs)
+// If the checker rejects a token, first we should just get it functional. It should regenerate all of it, until it is correct.
+// However, regardless of whether it passes or not, it should be drafting new tokens, unless it recieves a fail, in which case it should get reset
+// If the checker accepts n tokens, it will wait until the draft creates more tokens and continues as usual
+// I think it is important to time both the drafting and checking stages, to see if there is a clear bottleneck, but more importantly if there is a way to remove said bottleneck
+// After getting it to succesfully run on multithreads, we then implement KV cache regeneration and making partial runs work. We could also measure what the ideal "n" is here.
 
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
@@ -63,6 +63,7 @@ int main(int argc, char ** argv) {
     llama_model_ptr model_dft;
     llama_context_ptr ctx_dft;
 
+    //TODO: START PARALLEL HERE!
     // TODO: simplify this logic
     {
         const auto & params_spec = params.speculative.draft;
