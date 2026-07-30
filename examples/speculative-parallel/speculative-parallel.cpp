@@ -193,11 +193,11 @@ int main(int argc, char ** argv) {
             ckpt.update_pos(
                     prompt_tgt.size(),
                     llama_memory_seq_pos_min(llama_get_memory(ctx_tgt), seq_id),
-                    llama_memory_seq_pos_max(llama_get_memory(ctx_tgt), seq_id));
+                    llama_memory_seq_pos_max(llama_get_memory(ctx_tgt), seq_id)); // update checkpoint position with new token count, KV pos_min/max of target
 
             if (use_ckpt_dft) {
                 ckpt.update_dft(ctx_dft.get(), seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-            }
+            } // checkpoint draft model
 
             // generate a new draft
             common_speculative_get_draft_params(spec, seq_id) = {
@@ -208,10 +208,10 @@ int main(int argc, char ** argv) {
                 /* .prompt     = */ &prompt_tgt,
                 /* .result     = */ &draft, // output
             };
-            common_speculative_draft(spec);
+            common_speculative_draft(spec); // run draft model, writes into draft
 
             // save the original draft size
-            n_draft = draft.size();
+            n_draft = draft.size(); // new draft size? or original?
 
             // save a checkpoint of the target context before evaluating the draft
             // this allows us to restore the state if partial draft acceptance occurs
@@ -220,11 +220,10 @@ int main(int argc, char ** argv) {
                     ckpt.update_tgt(ctx_tgt, seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                 }
             }
-
             {
-                ckpt.load_dft(ctx_dft.get(), seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+                ckpt.load_dft(ctx_dft.get(), seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY); // restore draft KV to pre-draft state
 
-                llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, ckpt.pos_max + 1, -1);
+                llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, ckpt.pos_max + 1, -1); // drops drafts scratch tokens
             }
         } else {
             // we have a previous (partial) draft to reuse from checkpoint restoration
@@ -232,27 +231,27 @@ int main(int argc, char ** argv) {
                 GGML_ASSERT(!ckpt.empty());
             }
         }
-
+        // Verify phase
         // always have a token to evaluate from before - id_last
-        common_batch_clear(batch_tgt);
-        common_batch_add  (batch_tgt, id_last, n_past++, { seq_id }, true);
+        common_batch_clear(batch_tgt); // clear target batch
+        common_batch_add  (batch_tgt, id_last, n_past++, { seq_id }, true); // add id_last, n_past++, logits on
 
         // evaluate the target model on [id_last, draft0, draft1, ..., draftN-1]
         {
             for (size_t i = 0; i < draft.size(); ++i) {
                 common_batch_add(batch_tgt, draft[i], n_past + i, { seq_id }, true);
-            }
+            } // append draft[i] at n_past + i and its logits
 
             //LOG_DBG("target batch: %s\n", string_from(ctx_tgt, batch_tgt).c_str());
 
-            llama_decode(ctx_tgt, batch_tgt);
+            llama_decode(ctx_tgt, batch_tgt); // target decode, this is the part that saves time
         }
 
         // evaluate the same batch with the draft model
         {
             // TODO: extend to support MTP, Eagle, etc. See server code for reference
             llama_decode(ctx_dft.get(), batch_tgt);
-        }
+        } // eval draft to align KV cache
 
         // only save the sampler sampler state if we use checkpoints
         common_sampler_ptr smpl_save;
