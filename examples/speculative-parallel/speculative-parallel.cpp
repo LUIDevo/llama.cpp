@@ -256,7 +256,7 @@ int main(int argc, char ** argv) {
         // only save the sampler sampler state if we use checkpoints
         common_sampler_ptr smpl_save;
         if (use_ckpt_tgt) {
-            smpl_save.reset(common_sampler_clone(smpl.get()));
+            smpl_save.reset(common_sampler_clone(smpl.get())); //clone sampler if ckpt mode
         }
 
         // sample from the full target batch and return the accepted tokens based on the target sampler
@@ -266,7 +266,7 @@ int main(int argc, char ** argv) {
         // available logits from the batch and sample the next token until we run out of logits or the sampler
         // disagrees with the draft
         //
-        auto ids = common_sampler_sample_and_accept_n(smpl.get(), ctx_tgt, draft);
+        auto ids = common_sampler_sample_and_accept_n(smpl.get(), ctx_tgt, draft); // target samples greedily walks draft while it agrees returns draft prefix+1 target token
 
         //LOG_DBG("ids: %s\n", string_from(ctx_tgt, ids).c_str());
 
@@ -278,29 +278,29 @@ int main(int argc, char ** argv) {
         if (use_ckpt_tgt && ids.size() - 1 < draft.size()) {
             LOG_DBG("partial acceptance: %zu < %zu, restoring checkpoint\n", ids.size() - 1, draft.size());
 
-            draft = std::move(ids);
+            draft = std::move(ids); // keep accepted part as next iterations draft
 
             {
-                ckpt.load_tgt(ctx_tgt, seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+                ckpt.load_tgt(ctx_tgt, seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY); // restore target KV
 
-                llama_memory_seq_rm(llama_get_memory(ctx_tgt), seq_id, ckpt.pos_max + 1, -1);
+                llama_memory_seq_rm(llama_get_memory(ctx_tgt), seq_id, ckpt.pos_max + 1, -1); // trim past pos_max
             }
 
             {
-                ckpt.load_dft(ctx_dft.get(), seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+                ckpt.load_dft(ctx_dft.get(), seq_id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY); // same as previous but with draft
 
                 llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, ckpt.pos_max + 1, -1);
             }
 
-            prompt_tgt.resize(ckpt.n_tokens);
-            smpl = std::move(smpl_save);
+            prompt_tgt.resize(ckpt.n_tokens); // truncate history
+            smpl = std::move(smpl_save); // restore sampler clone
 
-            n_past = (int) prompt_tgt.size();
+            n_past = (int) prompt_tgt.size(); // reset cursor
 
             continue;
         }
 
-        common_speculative_accept(spec, seq_id, ids.size() - 1);
+        common_speculative_accept(spec, seq_id, ids.size() - 1); // tell speculator how many draft tokens accepted
 
         // full acceptance: consume the draft and commit accepted tokens
         n_past    += ids.size() - 1;
@@ -316,12 +316,12 @@ int main(int argc, char ** argv) {
         for (size_t i = 0; i < ids.size(); ++i) {
             prompt_tgt.push_back(id_last);
 
-            id_last = ids[i];
+            id_last = ids[i]; // push id_last to prompt_tgt
 
             if (llama_vocab_is_eog(vocab, id_last)) {
                 has_eos = true;
                 break;
-            }
+            } // check for end of generation token
 
             const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
 
@@ -329,7 +329,7 @@ int main(int argc, char ** argv) {
                 LOG("\u001b[%dm%s\u001b[37m", (36 - 0 % 6), token_str.c_str());
             } else {
                 LOG("%s", token_str.c_str());
-            }
+            } // check for color (drafted), plain (target)
         }
 
         LOG_DBG("accepted %d/%d draft tokens, the last target token is: (%d)\n", (int) ids.size() - 1, (int) draft.size(), id_last);
@@ -340,13 +340,13 @@ int main(int argc, char ** argv) {
         {
             LOG_DBG("clear kv cache from any extra tokens, n_past = %d\n", n_past);
 
-            llama_memory_seq_rm(llama_get_memory(ctx_tgt),       seq_id, n_past, -1);
-            llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, n_past, -1);
+            llama_memory_seq_rm(llama_get_memory(ctx_tgt),       seq_id, n_past, -1); // remove rejected tail from both KV
+            llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, n_past, -1); // remove rejected tail from both KV
         }
 
         if ((params.n_predict >= 0 && n_predict > params.n_predict) || has_eos) {
             break;
-        }
+        } // stop on EOS or n_predict
     }
 
     auto t_dec_end = ggml_time_us();
