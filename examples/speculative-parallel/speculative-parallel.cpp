@@ -13,6 +13,9 @@
 #include <vector>
 #include <utility>
 
+#include <thread>
+#include <mutex>
+
 
 // Currently the model runs with the simple draft and checker models
 // It alternates serially, like so
@@ -139,41 +142,44 @@ int main(int argc, char ** argv) {
     // everything until here is standard initialization
     // the relevant stuff for speculative decoding starts here
 
-    const auto t_enc_start = ggml_time_us();
+    const auto t_enc_start = ggml_time_us(); // start prompt encode timer
 
     // target model sampling context
-    common_sampler_ptr smpl(common_sampler_init(model_tgt, params.sampling));
+    common_sampler_ptr smpl(common_sampler_init(model_tgt, params.sampling)); // make target sampler, not draft
 
     // eval the prompt
     llama_decode(ctx_tgt,       llama_batch_get_one(inp.data(), inp.size() - 1));
     llama_decode(ctx_dft.get(), llama_batch_get_one(inp.data(), inp.size() - 1));
+    //decode prompt minus last token into target kv for both target and draft
 
     // note: keep the last token separate!
     llama_token id_last = inp.back();
 
     // all tokens currently in the target context
-    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1);
-    prompt_tgt.reserve(llama_n_ctx(ctx_tgt));
+    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1); // what is going on here that makes it an assigmnent?
+    prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); // allocates memory for ctx_tgt
 
-    int n_past = inp.size() - 1;
+    int n_past = inp.size() - 1; // KV position cursor
 
     // init the speculator
     const auto & params_spec = params.speculative;
 
-    struct common_speculative * spec = common_speculative_init(params.speculative, 1);
+    struct common_speculative * spec = common_speculative_init(params.speculative, 1); // Speculator common prompt
 
     common_speculative_begin(spec, seq_id, prompt_tgt);
 
-    llama_batch batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1);
+    llama_batch batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1); // alloc target branch
 
     size_t n_draft = 0;
 
-    llama_tokens draft;
-    common_prompt_checkpoint ckpt;
+    llama_tokens draft; // current draft tokens
+    common_prompt_checkpoint ckpt; // cpkt state snapshot for rollback
 
     const auto t_enc_end = ggml_time_us();
 
     const auto t_dec_start = ggml_time_us();
+
+    std::mutex mtx;
 
     while (true) {
         // generate or reuse draft tokens
