@@ -156,7 +156,7 @@ int main(int argc, char ** argv) {
     llama_token id_last = inp.back();
 
     // all tokens currently in the target context
-    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1); // what is going on here that makes it an assigmnent?
+    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1);
     prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); // allocates memory for ctx_tgt
 
     int n_past = inp.size() - 1; // KV position cursor
