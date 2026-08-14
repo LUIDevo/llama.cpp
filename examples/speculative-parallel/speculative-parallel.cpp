@@ -121,6 +121,12 @@ int main(int argc, char ** argv) {
     llama_decode(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1));
     //decode prompt minus last token into target kv, the worker prefills itself
 
+    const auto t_enc_end = ggml_time_us();
+
+    // measured separately: including it in the encode window would charge the
+    // draft model's load against the target's prompt throughput
+    const auto t_ready_start = ggml_time_us();
+
     if (!ready.get()) {
         LOG_ERR("%s: draft worker failed to initialise\n", __func__);
 
@@ -129,6 +135,8 @@ int main(int argc, char ** argv) {
 
         return 1;
     }
+
+    const auto t_ready_us = ggml_time_us() - t_ready_start;
 
     // note: keep the last token separate!
     llama_token id_last = inp.back();
@@ -144,8 +152,6 @@ int main(int argc, char ** argv) {
     llama_batch batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1); // alloc target branch
 
     size_t n_draft = 0;
-
-    const auto t_enc_end = ggml_time_us();
 
     const auto t_dec_start = ggml_time_us();
 
@@ -217,7 +223,7 @@ int main(int argc, char ** argv) {
             const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
 
             if (params.use_color && i + 1 < ids.size()) {
-                LOG("[%dm%s[37m", (36 - 0 % 6), token_str.c_str());
+                LOG("%c[%dm%s%c[37m", 0x1b, (36 - 0 % 6), token_str.c_str(), 0x1b);
             } else {
                 LOG("%s", token_str.c_str());
             } // check for color (drafted), plain (target)
@@ -231,13 +237,16 @@ int main(int argc, char ** argv) {
             llama_memory_seq_rm(llama_get_memory(ctx_tgt), seq_id, n_past, -1); // remove rejected tail, the worker trims its own
         }
 
-        // hand the committed state to the worker so its mirror stays identical
-        {
+        // hand the committed state to the worker so its mirror stays identical.
+        // skipped on EOG: the post-processing loop broke early, so n_past counts
+        // tokens that never reached prompt_tgt and the worker would trim to a
+        // cursor past its own KV contents
+        if (!has_eos) {
             draft_request req;
 
             req.verified   = std::move(verified);
-            req.n_accepted = (uint16_t)(ids.size() - 1);
-            req.accepted.assign(prompt_tgt.begin() + n_prompt_prev, prompt_tgt.end()); // exactly what we appended above
+            req.n_accepted = (uint16_t) (ids.size() - 1);
+            req.accepted.assign(prompt_tgt.begin() + (ptrdiff_t) n_prompt_prev, prompt_tgt.end()); // exactly what we appended above
             req.id_last    = id_last;
             req.n_past     = n_past;
 
@@ -276,6 +285,7 @@ int main(int argc, char ** argv) {
     LOG_INF("  n_calls   = %" PRId64 "\n", worker.timing.n_draft_calls);
     LOG_INF("  n_tokens  = %" PRId64 "\n", worker.timing.n_draft_toks);
     LOG_INF("  n_threads = %d\n", worker.timing.n_threads_dft);
+    LOG_INF("  t_ready   = %8.3f s (main blocked on worker load + prefill)\n", t_ready_us / 1e6f);
 
     LOG_INF("\n");
     LOG_INF("target:\n\n");

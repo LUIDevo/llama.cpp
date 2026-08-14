@@ -147,6 +147,10 @@ bool draft_setup(
     sparams.draft.ctx_dft = w.ctx.get();
 
     w.spec.reset(common_speculative_init(sparams, 1));
+    if (w.spec == nullptr) {
+        LOG_ERR("%s: failed to init the speculative context\n", __func__);
+        return false;
+    }
 
     w.batch = llama_batch_init(llama_n_batch(w.ctx.get()), 0, 1);
 
