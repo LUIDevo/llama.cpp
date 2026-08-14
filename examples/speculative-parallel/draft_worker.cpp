@@ -106,9 +106,21 @@ bool draft_setup(
         const common_params & params_base,
         llama_context       * ctx_tgt,
         const llama_tokens  & inp) {
-    GGML_ASSERT(params_base.speculative.types.size() == 1 &&
-                params_base.speculative.types[0] == COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE &&
-                "parallel speculation requires the plain draft-model implementation");
+    // NONE stays in the list by default and is skipped when the impls are built
+    // (speculative.cpp:2391), so only the real implementations are counted here
+    size_t n_impl = 0;
+    for (const auto type : params_base.speculative.types) {
+        if (type == COMMON_SPECULATIVE_TYPE_NONE) {
+            continue;
+        }
+
+        n_impl++;
+
+        GGML_ASSERT(type == COMMON_SPECULATIVE_TYPE_DRAFT_SIMPLE &&
+                    "parallel speculation requires the plain draft-model implementation");
+    }
+
+    GGML_ASSERT(n_impl == 1 && "parallel speculation requires exactly one draft-simple implementation");
 
     const auto & spec_draft = params_base.speculative.draft;
 
