@@ -1,5 +1,6 @@
+find_package(Threads REQUIRED)
 set(TARGET llama-speculative-parallel)
-add_executable(${TARGET} speculative-parallel.cpp)
+add_executable(${TARGET} speculative-parallel.cpp draft_worker.cpp)
 install(TARGETS ${TARGET} RUNTIME)
-target_link_libraries(${TARGET} PRIVATE llama-common llama ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE llama-common llama Threads::Threads ${CMAKE_THREAD_LIBS_INIT})
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
