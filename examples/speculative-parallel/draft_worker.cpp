@@ -218,6 +218,8 @@ void draft_thread_main(
     auto do_draft = [&w]() {
         llama_tokens out;
 
+        const int n_past_pre = w.n_past;
+
         common_speculative_get_draft_params(w.spec.get(), w.seq_id) = {
             /* .drafting = */ true,
             /* .n_max    = */ -1,
@@ -239,6 +241,11 @@ void draft_thread_main(
             w.timing.n_draft_calls++;
             w.timing.n_draft_toks += out.size();
         }
+
+        // draft() decodes id_last at n_past and its speculative tokens above it.
+        // the verified batch replays exactly those positions, so the scratch has
+        // to go or the replay collides with occupied cells
+        llama_memory_seq_rm(llama_get_memory(w.ctx.get()), w.seq_id, n_past_pre, -1);
 
         return out;
     };
