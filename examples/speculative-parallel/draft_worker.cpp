@@ -156,7 +156,7 @@ bool draft_setup(
     w.id_last = inp.back();
     w.n_past  = (int) w.prompt.size();
 
-    if (llama_decode(w.ctx.get(), llama_batch_get_one(w.prompt.data(), w.prompt.size())) != 0) {
+    if (llama_decode(w.ctx.get(), llama_batch_get_one(w.prompt.data(), (int32_t) w.prompt.size())) != 0) {
         LOG_ERR("failed to prefill the draft model prompt (%d tokens)\n", (int) w.prompt.size());
         return false;
     }
